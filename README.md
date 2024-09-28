@@ -41,7 +41,7 @@ Remove `-Silent` if you wish to see the console as it goes.
 If you are okay with a messy command, run the following to download the script and then run it.
 
 ```ps1
-$scriptUrl = 'https://raw.githubusercontent.com/LeHuman/NASA-APOD-Wallpaper/main/Set-NasaApodWallpaper.ps1'; $tempScript = "$env:TEMP\Set-NasaApodWallpaper.ps1"; Invoke-WebRequest -Uri $scriptUrl -OutFile $tempScript; powershell -ExecutionPolicy Bypass -File $tempScript -Force -Silent
+$scriptUrl = 'https://raw.githubusercontent.com/LeHuman/NASA-APOD-Wallpaper/main/Set-NasaApodWallpaper.ps1'; Set-Location $env:TEMP; $tempScript = ".\Set-NasaApodWallpaper.ps1"; Invoke-WebRequest -Uri $scriptUrl -OutFile $tempScript; powershell.exe -executionpolicy bypass .\Set-NasaApodWallpaper.ps1 -Force -Silent
 ```
 
 ### Requirements
