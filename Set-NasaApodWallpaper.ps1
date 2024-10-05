@@ -25,11 +25,24 @@ param(
     # May still trigger UAC prompt for setup.
     # Consoles will appear on first set-up to show installation of dependencies.
     [switch]$Silent,
-    # Force actions where possible, such as redownloading the APOD
-    [switch]$Force
+    # Force actions where possible, such as redownloading the APOD.
+    [switch]$Force,
+    # Apply wallpaper to all monitors. Will crop and resize for each monitor. Overrides -Monitors.
+    [switch]$All,
+    # Starting from 1, specify which monitor to apply the wallpaper to. Will crop and resize for each monitor.
+    [int[]]$Monitors
 )
 
 ####### OPTIONS #########
+
+# Monitor Selection
+$MonitorSelection = "-All"
+if (-not $Monitors) {
+    $All = $true
+}
+else {
+    $MonitorSelection = "-Monitors $($Monitors -join ",")"
+}
 
 # Arguments to pass for silent mode
 if ($Silent) {
@@ -427,6 +440,80 @@ function Get-CropRectangle($MonitorWidth, $MonitorHeight, $ImageWidth, $ImageHei
     return $cropWidth, $cropHeight
 }
 
+function Update-Fallback($imagePath, $title) {
+    Set-Wallpaper -imagePath $imagePath
+}
+
+function Update-With-Dependents($imagePath, $title) {
+    $MonitorCount = 0
+    $Failed = 0
+    foreach ($Monitor in $(Get-DesktopMonitors)) {
+        if (-not $All -and -not ($Monitors -contains $Monitor.Index)) {
+            continue
+        }
+        $MonitorCount += 1
+        $MonitorIndex = $Monitor.Index
+        $SWidth = $Monitor.Rect.Right - $Monitor.Rect.Left
+        $SHeight = $Monitor.Rect.Bottom - $Monitor.Rect.Top
+        try {
+            $IWidth, $IHeight = $SWidth, $SHeight
+            $ImagePathNew = $imagePath
+    
+            Write-SafeHost "Resolution $MonitorIndex : $SWidth x $SHeight"
+    
+            if (-not $NoCrop) {
+                $Image = Get-Image -FilePath $imagePath
+                $IWidth = $Image.Width
+                $IHeight = $Image.Height
+                $IWidth, $IHeight = Get-CropRectangle -MonitorWidth $SWidth -MonitorHeight $SHeight -ImageWidth $IWidth -ImageHeight $IHeight
+                $Image.Crop([SixLabors.ImageSharp.Rectangle]::new(0, 0, $IWidth, $IHeight))
+    
+                $SSmallSide = [math]::Min($SWidth, $SHeight)
+                $ISmallSide = [math]::Min($IWidth, $IHeight)
+                if ($ISmallSide -lt $SSmallSide) {
+                    $mult = $SSmallSide / $ISmallSide
+                    $Image.Resize($mult * 105)
+                    $Image.GaussianSharpen($SSmallSide / $ISmallSide / 1.5)
+                }
+    
+                $IWidth = $Image.Width
+                $IHeight = $Image.Height
+
+                $directory = Split-Path $imagePath -Parent
+                $filename = [System.IO.Path]::GetFileNameWithoutExtension($imagePath)
+                $extension = [System.IO.Path]::GetExtension($imagePath)
+                $newfilename = "${filename}_$MonitorIndex"
+                $ImagePathNew = Join-Path $directory "$newfilename$extension"
+
+                Save-Image -Image $Image -FilePath $ImagePathNew
+                Write-SafeHost "Image cropped to $IWidth x $IHeight for monitor $MonitorIndex"
+            }
+            
+            if (-not $NoText -and $title -is [string] -and -not ([System.String]::IsNullOrEmpty($title))) {
+                Write-SafeHost "Setting title to $title"
+                $fontSize = [math]::Floor($IHeight / 26)
+                $padding = [math]::Min($IWidth / 30, $IHeight / 30)
+                New-BGInfo -MonitorIndex $MonitorIndex {
+                    New-BGInfoLabel -Name $title -Color White -FontSize $fontSize -FontFamilyName 'Segoe UI Semilight'
+                } -FilePath $ImagePathNew -ConfigurationDirectory $downloadDir -PositionX $padding -PositionY $padding -WallpaperFit Fill   
+            }
+            else {
+                Set-DesktopWallpaper -Index $MonitorIndex -Position Fill -WallpaperPath $ImagePathNew
+            }
+            Write-SafeHost "Wallpaper set $MonitorIndex"            
+        }
+        catch {
+            # Are you running in VS Code?
+            Write-SafeHost -BackgroundColor Red "Failed to set wallpaper on monitor $MonitorIndex"
+            $Failed += 1
+        }
+    }
+    if ($MonitorCount -ne 0 -and $Failed -eq $MonitorCount) {
+        Write-SafeHost -BackgroundColor Red "Failed to set wallpaper on all monitors, falling back"
+        Update-Fallback -imagePath $imagePath -title $title
+    }
+}
+
 # Function to run image update
 function Update() {
     $imagePath, $title = Get-CurrentApodImage
@@ -437,57 +524,13 @@ function Update() {
         $hasDepend = Install-Dependencies
 
         if (-not $hasDepend) {
-            $NoCrop = $true
-            $NoText = $true
-            Write-SafeHost -ForegroundColor Yellow "Failed to get dependencies"
+            Write-SafeHost -ForegroundColor Yellow "Failed to get dependencies, running fallback"
+            Update-Fallback -imagePath $imagePath -title $title
         }
-
-        $SWidth, $SHeight = Get-Resolution
-        $IWidth, $IHeight = $SWidth, $SHeight
-
-        if (-not $NoCrop) {
-            $Image = Get-Image -FilePath $imagePath
-            $IWidth = $Image.Width
-            $IHeight = $Image.Height
-            $IWidth, $IHeight = Get-CropRectangle -MonitorWidth $SWidth -MonitorHeight $SHeight -ImageWidth $IWidth -ImageHeight $IHeight
-            $Image.Crop([SixLabors.ImageSharp.Rectangle]::new(0, 0, $IWidth, $IHeight))
-
-            $SSmallSide = [math]::Min($SWidth, $SHeight)
-            $ISmallSide = [math]::Min($IWidth, $IHeight)
-            if ($ISmallSide -lt $SSmallSide) {
-                $mult = $SSmallSide / $ISmallSide
-                $Image.Resize($mult * 105)
-                $Image.GaussianSharpen($SSmallSide / $ISmallSide / 1.5)
-            }
-
-            $IWidth = $Image.Width
-            $IHeight = $Image.Height
-            
-            Save-Image -Image $Image -FilePath $imagePath
-            Write-SafeHost "Image cropped to $IWidth $IHeight"
+        else {
+            Update-With-Dependents -imagePath $imagePath -title $title
         }
-
-        try {
-            if (-not $NoText -and $title -is [string] -and -not ([System.String]::IsNullOrEmpty($title))) {
-                Write-SafeHost "Setting title to $title"
-                $fontSize = [math]::Floor($IHeight / 26)
-                $padding = [math]::Min($IWidth / 30, $IHeight / 30)
-                New-BGInfo {
-                    New-BGInfoLabel -Name $title -Color White -FontSize $fontSize -FontFamilyName 'Segoe UI Semilight'
-                } -FilePath $imagePath -ConfigurationDirectory $downloadDir -PositionX $padding -PositionY $padding -WallpaperFit Fill   
-            }
-            elseif ($hasDepend) {
-                Set-DesktopWallpaper -Index 0 -Position Fill -WallpaperPath $imagePath
-            }
-            else {
-                Set-Wallpaper -imagePath $imagePath
-            }
-            Write-SafeHost "Wallpaper set"            
-        }
-        catch {
-            Write-SafeHost -BackgroundColor Red "Failed to set Wallpaper, trying again"
-            Set-Wallpaper -imagePath $imagePath
-        }
+    
     }
     else {
         Write-SafeHost -ForegroundColor Red "Failed to get and update APOD"
@@ -504,7 +547,7 @@ function New-SchedTask {
     if ($RunHidden) {
         if (Get-UnzipFile -DownloadUrl $RunHiddenURL -DestinationPath $downloadDir -FileName $RunHiddenName ) {
             $RunHiddenPath = Join-Path -Path $downloadDir -ChildPath $RunHiddenName
-            $taskAction = New-ScheduledTaskAction -Execute $RunHiddenPath -Argument "$($PSCommandPath) -Update -NoAdmin -Silent"
+            $taskAction = New-ScheduledTaskAction -Execute $RunHiddenPath -Argument "$($PSCommandPath) $MonitorSelection -Update -NoAdmin -Silent"
         }
         else {
             Write-SafeHost -ForegroundColor Red "Failed to get RunHidden.exe, fallingback to just Powershell"
@@ -513,7 +556,7 @@ function New-SchedTask {
     }
 
     if (-not $RunHidden) {
-        $taskAction = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-ExecutionPolicy Bypass -WindowStyle Hidden -NonInteractive -File $($PSCommandPath) -Update -NoAdmin -Silent"
+        $taskAction = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-ExecutionPolicy Bypass -WindowStyle Hidden -NonInteractive -File $($PSCommandPath) $MonitorSelection -Update -NoAdmin -Silent"
     }
     
     $taskTrigger = New-ScheduledTaskTrigger -AtLogOn
