@@ -332,10 +332,7 @@ function Test-NetworkConnection {
 # Define a function to check internet connectivity
 function Test-InternetConnection {
     try {
-        $request = [System.Net.WebRequest]::Create("ping.ubnt.com")
-        $request.Timeout = 5000
-        $request.GetResponse()
-        return $true
+        return $(Test-Connection -ComputerName ping.ubnt.com -Quiet -Count 1)
     }
     catch {
         return $false
