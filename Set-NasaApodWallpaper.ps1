@@ -187,6 +187,7 @@ function Move-ScriptAndRelaunch {
     # Relaunch the script from the new location
     try {
         Write-SafeHost "Relaunching script from $TargetDirectory..."
+        $optionsPassed = $optionsPassed.Trim("'", " ") # FIXME: Why is this needed?
         Start-Process -FilePath "powershell.exe" -ArgumentList "$SilentArgs -ExecutionPolicy Bypass -File `"$targetScriptDest`" $optionsPassed"
         Write-SafeHost "Script relaunched successfully."
     }
