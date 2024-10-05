@@ -75,6 +75,10 @@ May still trigger UAC prompt for setup.\
 Consoles will appear on first set-up to show installation of dependencies.
 - `-Force` [\<SwitchParameter\>]\
 Force actions where possible, such as redownloading the APOD
+- `-All` [\<SwitchParameter\>]\
+Apply wallpaper to all monitors. Will crop and resize for each monitor. Overrides -Monitors.
+- `-Monitors` <Int32[]>\
+Starting from 1, specify which monitor to apply the wallpaper to. Will crop and resize for each monitor.
 
 ### Print Help
 
