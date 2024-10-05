@@ -342,6 +342,9 @@ function Test-InternetConnection {
 # Wait for a network connection
 function Wait-ForConnection {
     while (-not (Test-NetworkConnection) -and -not (Test-InternetConnection)) {
+        if (Test-InternetConnection) {
+            break
+        }
         Write-SafeHost "Waiting for internet..." -ForegroundColor Yellow
         Start-Sleep -Seconds 5
     }   
