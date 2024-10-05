@@ -411,8 +411,10 @@ function Get-CurrentApodImage() {
     }
 
     ### Download image
+    Write-SafeHost "Downloading Image"
     $ProgressPreference = 'SilentlyContinue'
     Invoke-WebRequest -Uri $image -TimeoutSec 10 -ErrorAction Stop -OutFile $fullDLPath
+    Write-SafeHost "Done Downloading Image"
 
     return $fullDLPath, $title
 }
