@@ -30,10 +30,25 @@ param(
     # Apply wallpaper to all monitors. Will crop and resize for each monitor. Overrides -Monitors.
     [switch]$All,
     # Starting from 1, specify which monitor to apply the wallpaper to. Will crop and resize for each monitor.
-    [int[]]$Monitors
+    [int[]]$Monitors,
+    # Pass a NASA API key to use instead of trying to pull directly from the website, is faster and more reliable.
+    # Get a key at https://api.nasa.gov/
+    [string]$Api
 )
 
 ####### OPTIONS #########
+
+# TODO: Use Windows credential manager? Needs more testing.
+# Api key
+# if ($Api) {
+#     $target = "NASA_API_Key"
+#     try {
+#         cmdkey /generic:$target /user:API /pass:$Api
+#     }
+#     catch {
+#     }
+#     $Api = $null
+# }
 
 # Monitor Selection
 $MonitorSelection = "-All"
@@ -51,6 +66,8 @@ if ($Silent) {
 else {
     $SilentArgs = ""
 }
+# Remove Api from arguments
+# $MyInvocationLine = $MyInvocation.Line -replace '(-Api\s+\S+|-Api=\S+)', ''
 # Argument list to pass to admin setup
 $optionsPassed = $MyInvocation.Line -replace "^.*$($MyInvocation.MyCommand.Name)\s*".Trim()
 # Arguments to pass to admin setup
@@ -350,8 +367,20 @@ function Wait-ForConnection {
     }   
 }
 
-# Download current APOD image and title
-function Get-CurrentApodImage() {
+# Download current APOD image and title, using API
+function Get-Apod-Api($key) {
+    try {
+        $apodUrl = "https://api.nasa.gov/planetary/apod?api_key=$key"
+        $response = Invoke-RestMethod -Uri $apodUrl -Method Get
+        return [System.Uri]$response.url, $response.title   
+    }
+    catch {
+        return $null, $null
+    }
+}
+
+# Download current APOD image and title, fallback method
+function Get-Apod-Fallback() {
     # create download dir if it doesn't exist
     if (-not (Test-Path -LiteralPath $downloadDir)) {
         New-Item -ItemType Directory -Path $downloadDir
@@ -390,12 +419,41 @@ function Get-CurrentApodImage() {
         }
     }
 
-    if ($null -eq $image) {
-        # no image found, abort
-        return $null
+    return $image, $title
+}
+
+function Get-CurrentApodImage() {
+    $imageUrl, $title = $null, $null
+
+    # try {
+    #     $credential = Get-StoredCredential -Target "NASA_API_Key"
+
+    #     if ($credential) {
+    #         $apiKey = $credential.Password
+    #     }
+    #     else {
+    #         Write-SafeHost -ForegroundColor Yellow "NASA API key not found"
+    #     }
+    # }
+    # catch {
+    #     Write-SafeHost -ForegroundColor Red "Failed to request for NASA API key"
+    # }
+
+    if ($Api) {
+        $imageUrl, $title = Get-Apod-Api -key $Api
     }
 
-    $fileName = (Get-Date -Format "yyyyMMdd") + "_" + $image.Segments[$image.Segments.Count - 1]
+    if (-not $Api -or [System.String]::IsNullOrEmpty($imageUrl)) {
+        Write-SafeHost -ForegroundColor Yellow "Falling back to scraping page for APOD image"
+        $imageUrl, $title = Get-Apod-Fallback
+    }
+
+    if ([System.String]::IsNullOrEmpty($imageUrl)) {
+        Write-SafeHost -ForegroundColor Red "Failed to get APOD image"
+        return $null, $null
+    }
+
+    $fileName = (Get-Date -Format "yyyyMMdd") + "_" + $imageUrl.Segments[$imageUrl.Segments.Count - 1]
     $fullDLPath = ($downloadDir + "\" + $fileName)
 
     # Check if file already exists
@@ -406,14 +464,14 @@ function Get-CurrentApodImage() {
         }
         else {
             Write-SafeHost -ForegroundColor Red "Current image already exists, aborting!"
-            return $false;
+            return $null, $null;
         }
     }
 
     ### Download image
     Write-SafeHost "Downloading Image"
     $ProgressPreference = 'SilentlyContinue'
-    Invoke-WebRequest -Uri $image -TimeoutSec 10 -ErrorAction Stop -OutFile $fullDLPath
+    Invoke-WebRequest -Uri $imageUrl -TimeoutSec 10 -ErrorAction Stop -OutFile $fullDLPath
     Write-SafeHost "Done Downloading Image"
 
     return $fullDLPath, $title
@@ -536,7 +594,7 @@ function Update() {
     
     }
     else {
-        Write-SafeHost -ForegroundColor Red "Failed to get and update APOD"
+        Write-SafeHost -ForegroundColor Red "Failed to update to a new APOD image"
     }
 }
 
