@@ -40,15 +40,17 @@ param(
 
 # TODO: Use Windows credential manager? Needs more testing.
 # Api key
-# if ($Api) {
-#     $target = "NASA_API_Key"
-#     try {
-#         cmdkey /generic:$target /user:API /pass:$Api
-#     }
-#     catch {
-#     }
-#     $Api = $null
-# }
+$ApiArg = $null
+if ($Api) {
+    $ApiArg = "-Api $Api"
+    #     $target = "NASA_API_Key"
+    #     try {
+    #         cmdkey /generic:$target /user:API /pass:$Api
+    #     }
+    #     catch {
+    #     }
+    #     $Api = $null
+}
 
 # Monitor Selection
 $MonitorSelection = "-All"
@@ -608,7 +610,7 @@ function New-SchedTask {
     if ($RunHidden) {
         if (Get-UnzipFile -DownloadUrl $RunHiddenURL -DestinationPath $downloadDir -FileName $RunHiddenName ) {
             $RunHiddenPath = Join-Path -Path $downloadDir -ChildPath $RunHiddenName
-            $taskAction = New-ScheduledTaskAction -Execute $RunHiddenPath -Argument "$($PSCommandPath) $MonitorSelection -Update -NoAdmin -Silent"
+            $taskAction = New-ScheduledTaskAction -Execute $RunHiddenPath -Argument "$($PSCommandPath) $MonitorSelection $ApiArg -Update -NoAdmin -Silent"
         }
         else {
             Write-SafeHost -ForegroundColor Red "Failed to get RunHidden.exe, fallingback to just Powershell"
@@ -617,7 +619,7 @@ function New-SchedTask {
     }
 
     if (-not $RunHidden) {
-        $taskAction = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-ExecutionPolicy Bypass -WindowStyle Hidden -NonInteractive -File $($PSCommandPath) $MonitorSelection -Update -NoAdmin -Silent"
+        $taskAction = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-ExecutionPolicy Bypass -WindowStyle Hidden -NonInteractive -File $($PSCommandPath) $MonitorSelection $ApiArg -Update -NoAdmin -Silent"
     }
     
     $taskTrigger = New-ScheduledTaskTrigger -AtLogOn
