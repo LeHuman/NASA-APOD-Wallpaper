@@ -38,10 +38,15 @@ With `-Force` The script will move itself to a folder in pictures (where the pic
 
 Remove `-Silent` if you wish to see the console as it goes.
 
-If you are okay with a messy command, run the following to download the script and then run it.
+It is recommended to use a [NASA API key](https://api.nasa.gov/), append it with the `-Api` parameter.
+
+If you are okay with a messy command, run the following to download the script and then run it. Make sure to update the api parameter by replacing `<ApiKey>` with your api key.
+
+> [!NOTE]
+> Currently, the API key will be stored as plain text on your machine in task scheduler, if that is of concern.
 
 ```ps1
-$scriptUrl = 'https://raw.githubusercontent.com/LeHuman/NASA-APOD-Wallpaper/main/Set-NasaApodWallpaper.ps1'; Set-Location $env:TEMP; $tempScript = ".\Set-NasaApodWallpaper.ps1"; Invoke-WebRequest -Uri $scriptUrl -OutFile $tempScript; powershell.exe -executionpolicy bypass .\Set-NasaApodWallpaper.ps1 -Force -Silent
+$scriptUrl = 'https://raw.githubusercontent.com/LeHuman/NASA-APOD-Wallpaper/main/Set-NasaApodWallpaper.ps1'; Set-Location $env:TEMP; $tempScript = ".\Set-NasaApodWallpaper.ps1"; Invoke-WebRequest -Uri $scriptUrl -OutFile $tempScript; powershell.exe -executionpolicy bypass .\Set-NasaApodWallpaper.ps1 -Force -Silent -Api <ApiKey>
 ```
 
 ### Requirements
@@ -77,8 +82,11 @@ Consoles will appear on first set-up to show installation of dependencies.
 Force actions where possible, such as redownloading the APOD
 - `-All` [\<SwitchParameter\>]\
 Apply wallpaper to all monitors. Will crop and resize for each monitor. Overrides -Monitors.
-- `-Monitors` <Int32[]>\
+- `-Monitors` \<Int32[]\>\
 Starting from 1, specify which monitor to apply the wallpaper to. Will crop and resize for each monitor.
+`-Api` \<String\>\
+Pass a NASA API key to use instead of trying to pull directly from the website, is faster and more reliable.\
+Get a key at <https://api.nasa.gov/>
 
 ### Print Help
 
