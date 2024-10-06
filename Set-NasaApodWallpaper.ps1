@@ -43,13 +43,6 @@ param(
 $ApiArg = $null
 if ($Api) {
     $ApiArg = "-Api $Api"
-    #     $target = "NASA_API_Key"
-    #     try {
-    #         cmdkey /generic:$target /user:API /pass:$Api
-    #     }
-    #     catch {
-    #     }
-    #     $Api = $null
 }
 
 # Monitor Selection
@@ -68,8 +61,6 @@ if ($Silent) {
 else {
     $SilentArgs = ""
 }
-# Remove Api from arguments
-# $MyInvocationLine = $MyInvocation.Line -replace '(-Api\s+\S+|-Api=\S+)', ''
 # Argument list to pass to admin setup
 $optionsPassed = $MyInvocation.Line -replace "^.*$($MyInvocation.MyCommand.Name)\s*".Trim()
 # Arguments to pass to admin setup
@@ -427,20 +418,6 @@ function Get-Apod-Fallback() {
 function Get-CurrentApodImage() {
     $imageUrl, $title = $null, $null
 
-    # try {
-    #     $credential = Get-StoredCredential -Target "NASA_API_Key"
-
-    #     if ($credential) {
-    #         $apiKey = $credential.Password
-    #     }
-    #     else {
-    #         Write-SafeHost -ForegroundColor Yellow "NASA API key not found"
-    #     }
-    # }
-    # catch {
-    #     Write-SafeHost -ForegroundColor Red "Failed to request for NASA API key"
-    # }
-
     if ($Api) {
         $imageUrl, $title = Get-Apod-Api -key $Api
     }
@@ -489,15 +466,11 @@ function Get-CropRectangle($MonitorWidth, $MonitorHeight, $ImageWidth, $ImageHei
         # Crop by width
         $cropHeight = $ImageHeight  # Full height
         $cropWidth = [math]::Floor($cropHeight * $monitorAspectRatio)  # Calculate new width
-        # $cropX = [math]::Floor(($ImageWidth - $cropWidth) / 2)  # Center crop on x-axis
-        # $cropY = 0  # Start from top
     }
     else {
         # Crop by height
         $cropWidth = $ImageWidth  # Full width
         $cropHeight = [math]::Floor($cropWidth / $monitorAspectRatio)  # Calculate new height
-        # $cropX = 0  # Start from left
-        # $cropY = [math]::Floor(($ImageHeight - $cropHeight) / 2)  # Center crop on y-axis
     }
 
     return $cropWidth, $cropHeight
