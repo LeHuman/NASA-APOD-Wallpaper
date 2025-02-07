@@ -1,5 +1,5 @@
 [package]
-name = "NASA-APOD-Wallpaper-rs"
+name = "nasa-apod-wallpaper"
 version = "0.1.0"
 edition = "2021"
 
