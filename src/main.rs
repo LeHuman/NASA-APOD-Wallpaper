@@ -1,14 +1,17 @@
 use ab_glyph::Font;
 use ab_glyph::{FontRef, PxScale};
+use directories::UserDirs;
 use image::{imageops::FilterType, DynamicImage, GenericImageView};
 use imageproc::drawing::draw_text_mut;
 use reqwest::blocking::get;
+use reqwest::Url;
 use serde::Deserialize;
 use std::env;
 use std::fs;
 use std::fs::File;
 use std::io::copy;
 use std::path::Path;
+use std::path::PathBuf;
 
 const WATERMARK: &[u8] = include_bytes!("watermark.png");
 
@@ -31,14 +34,33 @@ pub struct ApodResponse {
     pub media_type: String,
 }
 
+pub fn get_nasa_apod_folder() -> Option<PathBuf> {
+    if let Some(user_dirs) = UserDirs::new() {
+        if let Some(pictures_dir) = user_dirs.picture_dir() {
+            let nasa_apod_path = pictures_dir.join("NASA_APOD");
+
+            if !nasa_apod_path.exists() {
+                if let Err(e) = fs::create_dir_all(&nasa_apod_path) {
+                    eprintln!("Failed to create directory: {}", e);
+                    return None;
+                }
+            }
+
+            return Some(nasa_apod_path);
+        }
+    }
+    None
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // run_test()?;
     let args: Vec<String> = env::args().collect();
 
     if args.len() < 2 {
         println!("Usage: {} [NASA_API_KEY]", args[0]);
         return Ok(());
     }
+
+    let save_directory = get_nasa_apod_folder().ok_or("Failed to get APOD pictures folder")?;
 
     let input = &args[1];
 
@@ -47,7 +69,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         input
     )) {
         Ok(apod) => {
-            if let Err(e) = process_image(&apod) {
+            if let Err(e) = process_image(&save_directory, &apod) {
                 eprintln!("Error processing image: {}", e);
             }
         }
@@ -58,7 +80,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 fn test_local_apod() -> Result<(), Box<dyn std::error::Error>> {
-    let save_dir = format!("{}/NASA_APOD", env::current_dir()?.to_str().unwrap());
+    let save_dir = format!("{}/NASA_APOD", env::temp_dir().to_str().unwrap());
     fs::create_dir_all(&save_dir)?;
     let mut img = image::open("NASA_APOD/test_apod.jpg")?;
     let wallpaper = Wallpaper::new()?;
@@ -107,7 +129,10 @@ fn fetch_apod(apod_url: String) -> Result<ApodResponse, Box<dyn std::error::Erro
     Ok(response)
 }
 
-fn process_image(apod: &ApodResponse) -> Result<(), Box<dyn std::error::Error>> {
+fn process_image(
+    save_dir: &PathBuf,
+    apod: &ApodResponse,
+) -> Result<(), Box<dyn std::error::Error>> {
     let wallpaper = Wallpaper::new().unwrap();
     let monitors = wallpaper.get_monitors();
 
@@ -115,16 +140,8 @@ fn process_image(apod: &ApodResponse) -> Result<(), Box<dyn std::error::Error>> 
         return Err("No monitors detected.".into());
     }
 
-    // let save_dir = format!("{}\\NASA_APOD", env::var("APPDATA")?);
-    let save_dir = format!("{}\\NASA_APOD", env::current_dir()?.to_str().unwrap());
-    fs::create_dir_all(&save_dir)?;
-
-    let filename = format!("{}/apod.jpg", save_dir);
-    if !Path::new(&filename).exists() {
-        download_image(&apod.url, &filename)?;
-    }
-
-    let mut img = image::open(&filename)?;
+    let filepath = download_image(&apod.hd_url.clone().unwrap_or(apod.url.clone()), &save_dir)?;
+    let mut img = image::open(&filepath)?;
 
     let watermarked_monitor = rand::random_range(0..monitors.len());
 
@@ -140,9 +157,11 @@ fn process_image(apod: &ApodResponse) -> Result<(), Box<dyn std::error::Error>> 
             final_img = add_watermark(final_img, width, height)?;
         }
 
-        let output_filename = format!("{}/wallpaper_{}.png", save_dir, index);
-        final_img.save_with_format(&output_filename, image::ImageFormat::Png)?;
-        println!("Saved: {}", output_filename);
+        let output_filepath = save_dir.join(format!("Monitor{}.png", index));
+        let output_filename = output_filepath.to_str().unwrap_or_default();
+
+        final_img.save_with_format(&output_filepath, image::ImageFormat::Png)?;
+        println!("Saved Image: {}", output_filename);
 
         wallpaper.set_wallpaper(&output_filename, &monitor)?;
     }
@@ -150,11 +169,20 @@ fn process_image(apod: &ApodResponse) -> Result<(), Box<dyn std::error::Error>> 
     Ok(())
 }
 
-fn download_image(url: &str, filename: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn download_image(url: &str, download_dir: &PathBuf) -> Result<PathBuf, Box<dyn std::error::Error>> {
     let mut response = get(url)?;
-    let mut file = File::create(filename)?;
+    let url = Url::parse(url)?;
+    let filename = url
+        .path_segments()
+        .ok_or("Failed to split URL")?
+        .last()
+        .ok_or("Failed to get filename from URL")?;
+    let filepath = download_dir.join(filename);
+
+    let mut file = File::create(&filepath)?;
     copy(&mut response, &mut file)?;
-    Ok(())
+    println!("Downloaded Image: {}", url);
+    Ok(filepath)
 }
 
 fn resize_and_sharpen(
