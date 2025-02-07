@@ -9,6 +9,7 @@ use std::env;
 use std::fs;
 use std::fs::File;
 use std::io::copy;
+use std::path::Path;
 use std::path::PathBuf;
 
 const WATERMARK: &[u8] = include_bytes!("watermark.png");
@@ -127,10 +128,7 @@ fn fetch_apod(apod_url: String) -> Result<ApodResponse, Box<dyn std::error::Erro
     Ok(response)
 }
 
-fn process_image(
-    save_dir: &PathBuf,
-    apod: &ApodResponse,
-) -> Result<(), Box<dyn std::error::Error>> {
+fn process_image(save_dir: &Path, apod: &ApodResponse) -> Result<(), Box<dyn std::error::Error>> {
     let wallpaper = Wallpaper::new().unwrap();
     let monitors = wallpaper.get_monitors();
 
@@ -167,7 +165,7 @@ fn process_image(
     Ok(())
 }
 
-fn download_image(url: &str, download_dir: &PathBuf) -> Result<PathBuf, Box<dyn std::error::Error>> {
+fn download_image(url: &str, download_dir: &Path) -> Result<PathBuf, Box<dyn std::error::Error>> {
     let mut response = get(url)?;
     let url = Url::parse(url)?;
     let filename = url
@@ -188,19 +186,19 @@ fn resize_and_sharpen(
     width: u32,
     height: u32,
 ) -> Result<DynamicImage, Box<dyn std::error::Error>> {
-    let monitorAspectRatio = f64::from(width) / f64::from(height);
-    let imageAspectRatio = f64::from(img.width()) / f64::from(img.height());
-    let mut crop_height = 0.0;
-    let mut crop_width = 0.0;
+    let monitor_aspect_ratio = f64::from(width) / f64::from(height);
+    let image_aspect_ratio = f64::from(img.width()) / f64::from(img.height());
+    let crop_height;
+    let crop_width;
 
-    if imageAspectRatio > monitorAspectRatio {
+    if image_aspect_ratio > monitor_aspect_ratio {
         // Crop by width
         crop_height = f64::from(img.height());
-        crop_width = crop_height * monitorAspectRatio;
+        crop_width = crop_height * monitor_aspect_ratio;
     } else {
         // Crop by height
         crop_width = f64::from(img.width());
-        crop_height = crop_width / monitorAspectRatio;
+        crop_height = crop_width / monitor_aspect_ratio;
     }
 
     let cropped = img.crop(0, 0, crop_width as u32, crop_height as u32);
@@ -312,7 +310,7 @@ fn add_text_overlay(
 fn add_watermark(
     mut img: DynamicImage,
     mw: u32,
-    mh: u32,
+    _mh: u32,
 ) -> Result<DynamicImage, Box<dyn std::error::Error>> {
     let image = image::load_from_memory(WATERMARK)?;
 
