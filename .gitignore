@@ -1,0 +1,9 @@
+/target
+/NASA_APOD
+/res
+
+Cargo.lock
+
+*.py
+*.png
+*.ttf
