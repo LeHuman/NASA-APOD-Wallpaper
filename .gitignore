@@ -5,6 +5,5 @@
 
 Cargo.lock
 
-*.py
-*.png
-*.ttf
+/*.py
+/*.png
