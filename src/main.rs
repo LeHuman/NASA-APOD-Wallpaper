@@ -9,8 +9,11 @@ use std::env;
 use std::fs;
 use std::fs::File;
 use std::io::copy;
+use std::net::TcpStream;
 use std::path::Path;
 use std::path::PathBuf;
+use std::time::Duration;
+use std::time::Instant;
 
 const WATERMARK: &[u8] = include_bytes!("watermark.png");
 
@@ -51,6 +54,25 @@ pub fn get_nasa_apod_folder() -> Option<PathBuf> {
     None
 }
 
+fn check_connection(timeout: Duration) -> Result<(), String> {
+    let deadline = Instant::now() + timeout;
+
+    loop {
+        match TcpStream::connect("api.nasa.gov:80") {
+            Ok(_) => {
+                println!("Internet connection detected");
+                return Ok(());
+            }
+            Err(_) => {
+                if Instant::now() >= deadline {
+                    return Err("Timeout reached, no connection".into());
+                }
+                std::thread::sleep(Duration::from_secs(1));
+            }
+        }
+    }
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
 
@@ -62,6 +84,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let save_directory = get_nasa_apod_folder().ok_or("Failed to get APOD pictures folder")?;
 
     let input = &args[1];
+
+    let timeout = Duration::from_secs(30);
+    println!("Waiting for internet connection");
+    check_connection(timeout)?;
 
     match fetch_apod(format!(
         "https://api.nasa.gov/planetary/apod?api_key={}&hd=true",
