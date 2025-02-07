@@ -52,9 +52,9 @@ impl Wallpaper {
                 return Err("Failed to create IDesktopWallpaper instance".into());
             }
 
-            return Ok(Self {
+            Ok(Self {
                 instance: desktop_wallpaper,
-            });
+            })
         }
     }
 
@@ -66,31 +66,29 @@ impl Wallpaper {
             if SUCCEEDED(instance.GetMonitorDevicePathCount(&mut monitor_count)) {
                 for i in 0..monitor_count {
                     let mut monitor_id: *mut wchar_t = ptr::null_mut();
-                    if SUCCEEDED(instance.GetMonitorDevicePathAt(i, &mut monitor_id)) {
-                        if !monitor_id.is_null() {
-                            // Convert to Rust's owned data to prevent use-after-free
-                            let monitor_name_vec =
-                                std::slice::from_raw_parts(monitor_id, 82).to_vec(); // FIXME: What is the actual length needed here?
-                            let monitor_name = String::from_utf16_lossy(&monitor_name_vec);
-                            println!("Monitor {} ID: {}", i, monitor_name);
+                    if SUCCEEDED(instance.GetMonitorDevicePathAt(i, &mut monitor_id)) && !monitor_id.is_null() {
+                        // Convert to Rust's owned data to prevent use-after-free
+                        let monitor_name_vec =
+                            std::slice::from_raw_parts(monitor_id, 82).to_vec(); // FIXME: What is the actual length needed here?
+                        let monitor_name = String::from_utf16_lossy(&monitor_name_vec);
+                        println!("Monitor {} ID: {}", i, monitor_name);
 
-                            // Get resolution
-                            let mut dev_mode: DEVMODEW = std::mem::zeroed();
-                            dev_mode.dmSize = std::mem::size_of::<DEVMODEW>() as u16;
+                        // Get resolution
+                        let mut dev_mode: DEVMODEW = std::mem::zeroed();
+                        dev_mode.dmSize = std::mem::size_of::<DEVMODEW>() as u16;
 
-                            let mut monitor_rect = std::mem::zeroed();
-                            if SUCCEEDED(instance.GetMonitorRECT(monitor_id, &mut monitor_rect)) {
-                                monitors.push(Monitor {
-                                    id: monitor_name_vec,
-                                    width: (monitor_rect.right - monitor_rect.left) as u32,
-                                    height: (monitor_rect.bottom - monitor_rect.top) as u32,
-                                });
-                            } else {
-                                eprintln!("Failed to get resolution for monitor {}", i);
-                            }
-
-                            CoTaskMemFree(monitor_id as *mut _);
+                        let mut monitor_rect = std::mem::zeroed();
+                        if SUCCEEDED(instance.GetMonitorRECT(monitor_id, &mut monitor_rect)) {
+                            monitors.push(Monitor {
+                                id: monitor_name_vec,
+                                width: (monitor_rect.right - monitor_rect.left) as u32,
+                                height: (monitor_rect.bottom - monitor_rect.top) as u32,
+                            });
+                        } else {
+                            eprintln!("Failed to get resolution for monitor {}", i);
                         }
+
+                        CoTaskMemFree(monitor_id as *mut _);
                     }
                 }
             }

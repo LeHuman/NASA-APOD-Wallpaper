@@ -91,7 +91,7 @@ fn test_local_apod() -> Result<(), Box<dyn std::error::Error>> {
     let mut already_watermarked = false;
 
     for (index, monitor) in monitors.iter().enumerate() {
-        let (width, height) = monitor.size().into();
+        let (width, height) = monitor.size();
         let resized_img = resize_and_sharpen(&mut img, width, height)?;
         let scale = ((1920.0 / f64::from(width)) + (1080.0 / f64::from(height))) / 2.0;
         let annotated_img = add_text_overlay(
@@ -110,7 +110,7 @@ fn test_local_apod() -> Result<(), Box<dyn std::error::Error>> {
         final_img.save_with_format(&output_filename, image::ImageFormat::Png)?;
         println!("Saved: {}", output_filename);
 
-        wallpaper.set_wallpaper(&output_filename, &monitor)?;
+        wallpaper.set_wallpaper(&output_filename, monitor)?;
     }
 
     Ok(())
@@ -138,7 +138,7 @@ fn process_image(
         return Err("No monitors detected.".into());
     }
 
-    let filepath = download_image(&apod.hd_url.clone().unwrap_or(apod.url.clone()), &save_dir)?;
+    let filepath = download_image(&apod.hd_url.clone().unwrap_or(apod.url.clone()), save_dir)?;
     let mut img = image::open(&filepath)?;
 
     let watermarked_monitor = rand::random_range(0..monitors.len());
@@ -161,7 +161,7 @@ fn process_image(
         final_img.save_with_format(&output_filepath, image::ImageFormat::Png)?;
         println!("Saved Image: {}", output_filename);
 
-        wallpaper.set_wallpaper(&output_filename, &monitor)?;
+        wallpaper.set_wallpaper(output_filename, monitor)?;
     }
 
     Ok(())
@@ -196,11 +196,11 @@ fn resize_and_sharpen(
     if imageAspectRatio > monitorAspectRatio {
         // Crop by width
         crop_height = f64::from(img.height());
-        crop_width = f64::from(crop_height) * monitorAspectRatio;
+        crop_width = crop_height * monitorAspectRatio;
     } else {
         // Crop by height
         crop_width = f64::from(img.width());
-        crop_height = f64::from(crop_width) / monitorAspectRatio;
+        crop_height = crop_width / monitorAspectRatio;
     }
 
     let cropped = img.crop(0, 0, crop_width as u32, crop_height as u32);
@@ -212,7 +212,7 @@ fn resize_and_sharpen(
 fn compute_image_brightness(img: &DynamicImage) -> u8 {
     let grayscale = img.to_luma8();
     let total_brightness: u32 = grayscale.pixels().map(|p| p.0[0] as u32).sum();
-    let avg_brightness = total_brightness / (grayscale.width() * grayscale.height()) as u32;
+    let avg_brightness = total_brightness / (grayscale.width() * grayscale.height());
     avg_brightness as u8
 }
 
@@ -299,7 +299,7 @@ fn add_text_overlay(
             &mut img,
             text_color,
             (40.0 * scale) as i32,
-            f32::from(100.0 * scale + (28.0 * scale * (f64::from(i as u32)) as f32)) as i32,
+            (100.0 * scale + (28.0 * scale * (f64::from(i as u32)) as f32)) as i32,
             font_scale,
             &font,
             line,
