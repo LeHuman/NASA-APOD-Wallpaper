@@ -1,4 +1,3 @@
-use ab_glyph::Font;
 use ab_glyph::{FontRef, PxScale};
 use directories::UserDirs;
 use image::{imageops::FilterType, DynamicImage, GenericImageView};
@@ -10,7 +9,6 @@ use std::env;
 use std::fs;
 use std::fs::File;
 use std::io::copy;
-use std::path::Path;
 use std::path::PathBuf;
 
 const WATERMARK: &[u8] = include_bytes!("watermark.png");
@@ -282,7 +280,7 @@ fn add_text_overlay(
         if token.contains('.') {
             max_sentence -= 1;
         }
-        if ((token.len() + curr_str.len()) >= max_length) {
+        if (token.len() + curr_str.len()) >= max_length {
             lines.push(curr_str.clone());
             curr_str.clear();
         }
