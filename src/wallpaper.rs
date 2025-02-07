@@ -30,7 +30,6 @@ pub(crate) struct Wallpaper {
     instance: *mut IDesktopWallpaper,
 }
 
-// FIXME: Creating multiple instances should be possible, it just requires extracting the monitor info collection from winit
 impl Wallpaper {
     pub(crate) fn new() -> Result<Self, Box<dyn std::error::Error>> {
         unsafe {

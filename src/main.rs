@@ -1,3 +1,4 @@
+use ab_glyph::Font;
 use ab_glyph::{FontRef, PxScale};
 use image::{imageops::FilterType, DynamicImage, GenericImageView};
 use imageproc::drawing::draw_text_mut;
@@ -9,7 +10,12 @@ use std::fs::File;
 use std::io::copy;
 use std::path::Path;
 
-const WATERMARK_PATH: &str = "dog.png"; // Path to watermark
+const WATERMARK: &[u8] = include_bytes!("watermark.png");
+
+#[allow(dead_code)]
+const FONT_LICENSE: &[u8] = include_bytes!("font/LICENSE");
+const TITLE_FONT: &[u8] = include_bytes!("font/IBMPlexSans-Bold.ttf");
+const FONT: &[u8] = include_bytes!("font/IBMPlexSans-Text.ttf");
 
 mod wallpaper;
 use wallpaper::Wallpaper;
@@ -67,7 +73,13 @@ fn test_local_apod() -> Result<(), Box<dyn std::error::Error>> {
     for (index, monitor) in monitors.iter().enumerate() {
         let (width, height) = monitor.size().into();
         let resized_img = resize_and_sharpen(&mut img, width, height)?;
-        let annotated_img = add_text_overlay(resized_img, "A very epic title", "This is so epic")?;
+        let scale = ((1920.0 / f64::from(width)) + (1080.0 / f64::from(height))) / 2.0;
+        let annotated_img = add_text_overlay(
+            scale as f32,
+            resized_img,
+            "A very epic title",
+            "This is so epic",
+        )?;
         let mut final_img = annotated_img;
         if !already_watermarked {
             final_img = add_watermark(final_img.clone(), width, height)?;
@@ -117,9 +129,11 @@ fn process_image(apod: &ApodResponse) -> Result<(), Box<dyn std::error::Error>> 
     let watermarked_monitor = rand::random_range(0..monitors.len());
 
     for (index, monitor) in monitors.iter().enumerate() {
-        let (width, height) = monitor.size().into();
+        let (width, height) = monitor.size();
         let resized_img = resize_and_sharpen(&mut img, width, height)?;
-        let annotated_img = add_text_overlay(resized_img, &apod.title, &apod.explanation)?;
+        let scale = ((f64::from(width) / 1920.0) + (f64::from(height) / 1080.0)) / 2.0;
+        let annotated_img =
+            add_text_overlay(scale as f32, resized_img, &apod.title, &apod.explanation)?;
         let mut final_img = annotated_img;
         if index == watermarked_monitor {
             println!("Watermarked: {}", watermarked_monitor);
@@ -195,15 +209,19 @@ fn test_brightness_transformation() {
 }
 
 fn add_text_overlay(
+    scale: f32,
     mut img: DynamicImage,
     title: &str,
     desc: &str,
 ) -> Result<DynamicImage, Box<dyn std::error::Error>> {
-    let font_data = include_bytes!("HelveticaNeueBold.ttf");
-    let font = FontRef::try_from_slice(font_data)?;
-    let scale = PxScale::from(100.0);
+    let title_font = FontRef::try_from_slice(TITLE_FONT)?;
+    // let title_scale = PxScale::from(title_font.pt_to_px_scale(96.0).unwrap_or(100.0.into()));
+    let title_scale = PxScale::from(64.0 * scale);
+    let font = FontRef::try_from_slice(FONT)?;
+    // let font_scale = PxScale::from(title_font.pt_to_px_scale(28.0).unwrap_or(40.0.into()));
+    let font_scale = PxScale::from(24.0 * scale);
 
-    let (twidth, theight) = imageproc::drawing::text_size(scale, &font, title);
+    let (twidth, theight) = imageproc::drawing::text_size(title_scale, &title_font, title);
     let title_iso = img.crop(
         0,
         0,
@@ -217,7 +235,15 @@ fn add_text_overlay(
     );
     let text_color = image::Rgba([brightness, brightness, brightness, 255]);
 
-    draw_text_mut(&mut img, text_color, 48, 32, scale, &font, title);
+    draw_text_mut(
+        &mut img,
+        text_color,
+        (42.0 * scale) as i32,
+        (32.0 * scale) as i32,
+        title_scale,
+        &title_font,
+        title,
+    );
     let mut lines: Vec<String> = Vec::new();
     let tokens = desc.split_whitespace();
     let max_length = 100;
@@ -246,9 +272,9 @@ fn add_text_overlay(
         draw_text_mut(
             &mut img,
             text_color,
-            32,
-            148 + (48 * (i as i32)),
-            PxScale::from(40.0),
+            (40.0 * scale) as i32,
+            f32::from(100.0 * scale + (28.0 * scale * (f64::from(i as u32)) as f32)) as i32,
+            font_scale,
             &font,
             line,
         );
@@ -262,15 +288,15 @@ fn add_watermark(
     mw: u32,
     mh: u32,
 ) -> Result<DynamicImage, Box<dyn std::error::Error>> {
-    let image = image::open(WATERMARK_PATH)?;
+    let image = image::load_from_memory(WATERMARK)?;
 
     let size = f64::from(mw) / 2.8;
     let ratio = f64::from(image.height()) / f64::from(image.width());
 
-    let watermark = image.resize(size as u32, (size * ratio) as u32, FilterType::Lanczos3);
+    let image = image.resize(size as u32, (size * ratio) as u32, FilterType::Lanczos3);
     let (w, h) = img.dimensions();
-    let (wm_w, wm_h) = watermark.dimensions();
+    let (wm_w, wm_h) = image.dimensions();
 
-    image::imageops::overlay(&mut img, &watermark, (w - wm_w).into(), (h - wm_h).into());
+    image::imageops::overlay(&mut img, &image, (w - wm_w).into(), (h - wm_h).into());
     Ok(img)
 }
