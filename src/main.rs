@@ -8,10 +8,7 @@ use std::fs;
 use std::fs::File;
 use std::io::copy;
 use std::path::Path;
-use std::process::Command;
 
-const NASA_APOD_URL: &str =
-    "https://api.nasa.gov/planetary/apod?api_key=&hd=true";
 const WATERMARK_PATH: &str = "dog.png"; // Path to watermark
 
 mod wallpaper;
@@ -30,7 +27,19 @@ pub struct ApodResponse {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // run_test()?;
-    match fetch_apod() {
+    let args: Vec<String> = env::args().collect();
+
+    if args.len() < 2 {
+        println!("Usage: {} [NASA_API_KEY]", args[0]);
+        return Ok(());
+    }
+
+    let input = &args[1];
+
+    match fetch_apod(format!(
+        "https://api.nasa.gov/planetary/apod?api_key={}&hd=true",
+        input
+    )) {
         Ok(apod) => {
             if let Err(e) = process_image(&apod) {
                 eprintln!("Error processing image: {}", e);
@@ -75,8 +84,8 @@ fn test_local_apod() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn fetch_apod() -> Result<ApodResponse, Box<dyn std::error::Error>> {
-    let response = get(NASA_APOD_URL)?;
+fn fetch_apod(apod_url: String) -> Result<ApodResponse, Box<dyn std::error::Error>> {
+    let response = get(apod_url)?;
     let response = response.json::<ApodResponse>()?;
 
     if response.media_type != "image" {

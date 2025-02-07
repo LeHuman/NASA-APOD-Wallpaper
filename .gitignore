@@ -1,6 +1,7 @@
 /target
 /NASA_APOD
 /res
+/.vscode
 
 Cargo.lock
 
