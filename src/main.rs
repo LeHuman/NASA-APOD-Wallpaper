@@ -5,6 +5,8 @@ use imageproc::drawing::draw_text_mut;
 use reqwest::blocking::get;
 use reqwest::Url;
 use serde::Deserialize;
+use std::cmp::max;
+use std::cmp::min;
 use std::env;
 use std::fs;
 use std::fs::File;
@@ -192,7 +194,6 @@ fn process_image(save_dir: &Path, apod: &ApodResponse) -> Result<(), Box<dyn std
 }
 
 fn download_image(url: &str, download_dir: &Path) -> Result<PathBuf, Box<dyn std::error::Error>> {
-    let mut response = get(url)?;
     let url = Url::parse(url)?;
     let filename = url
         .path_segments()
@@ -201,6 +202,12 @@ fn download_image(url: &str, download_dir: &Path) -> Result<PathBuf, Box<dyn std
         .ok_or("Failed to get filename from URL")?;
     let filepath = download_dir.join(filename);
 
+    if filepath.exists() {
+        println!("Image already downloaded: {}", url);
+        return Ok(filepath);
+    }
+
+    let mut response = get(url.clone())?;
     let mut file = File::create(&filepath)?;
     copy(&mut response, &mut file)?;
     println!("Downloaded Image: {}", url);
@@ -227,35 +234,28 @@ fn resize_and_sharpen(
         crop_height = crop_width / monitor_aspect_ratio;
     }
 
-    let cropped = img.crop(0, 0, crop_width as u32, crop_height as u32);
+    let cropped = img.crop_imm(0, 0, crop_width as u32, crop_height as u32);
     let resized = cropped.resize_exact(width, height, FilterType::Lanczos3);
     // TODO: Sharpen here
     Ok(resized)
 }
 
-fn compute_image_brightness(img: &DynamicImage) -> u8 {
+fn compute_image_brightness(img: &DynamicImage) -> u32 {
     let grayscale = img.to_luma8();
     let total_brightness: u32 = grayscale.pixels().map(|p| p.0[0] as u32).sum();
     let avg_brightness = total_brightness / (grayscale.width() * grayscale.height());
-    avg_brightness as u8
+    avg_brightness
 }
 
-fn brightness_transform(x: u8) -> u8 {
-    let normalized = x as f64 / 255.0;
-    let exponent = 1.5;
-    let transformed = if normalized < 0.5 {
-        normalized.powf(exponent)
-    } else {
-        1.0 - (1.0 - normalized).powf(exponent)
-    };
-    (transformed * 255.0).round() as u8
-}
-
-#[test]
-fn test_brightness_transformation() {
-    for i in (0..=255).step_by(25) {
-        println!("{} -> {}", i, brightness_transform(i));
+fn exponential_shrink(value: i64, factor: f64) -> i64 {
+    if value == 0 {
+        return 0;
     }
+
+    let sign = value.signum();
+    let magnitude = (value.abs() as f64).ln() / factor;
+
+    (sign as f64 * magnitude.exp()).round() as i64
 }
 
 fn add_text_overlay(
@@ -265,24 +265,21 @@ fn add_text_overlay(
     desc: &str,
 ) -> Result<DynamicImage, Box<dyn std::error::Error>> {
     let title_font = FontRef::try_from_slice(TITLE_FONT)?;
-    // let title_scale = PxScale::from(title_font.pt_to_px_scale(96.0).unwrap_or(100.0.into()));
     let title_scale = PxScale::from(64.0 * scale);
     let font = FontRef::try_from_slice(FONT)?;
-    // let font_scale = PxScale::from(title_font.pt_to_px_scale(28.0).unwrap_or(40.0.into()));
     let font_scale = PxScale::from(24.0 * scale);
 
     let (twidth, theight) = imageproc::drawing::text_size(title_scale, &title_font, title);
-    let title_iso = img.crop(
+    let img_sample = img.crop_imm(
         0,
         0,
         (f64::from(twidth) * 1.2) as u32,
         (f64::from(theight) * 3.0) as u32,
     );
-    // title_iso.save_with_format("./title_sample.png", image::ImageFormat::Png)?;
 
-    let brightness = brightness_transform(
-        (compute_image_brightness(&title_iso) as u16 + u16::from(u8::MAX / 2)) as u8,
-    );
+    const U8_MAX: u32 = u8::MAX as u32;
+    let sample_brightness = compute_image_brightness(&img_sample);
+    let brightness = if sample_brightness < U8_MAX { 255 } else { 0 };
     let text_color = image::Rgba([brightness, brightness, brightness, 255]);
 
     draw_text_mut(
@@ -344,6 +341,16 @@ fn add_watermark(
     let ratio = f64::from(image.height()) / f64::from(image.width());
 
     let image = image.resize(size as u32, (size * ratio) as u32, FilterType::Lanczos3);
+    let img_sample = img.crop_imm(
+        min(img.width() - image.width(), img.width()),
+        min(img.height() - image.height(), img.height()),
+        min(image.width(), img.width()),
+        min(image.height(), img.height()),
+    );
+    let image_b = compute_image_brightness(&image);
+    let img_b = compute_image_brightness(&img_sample);
+    let dv_b = exponential_shrink((img_b as i64) - (image_b as i64), 1.35);
+    let image = image.brighten(dv_b as i32);
     let (w, h) = img.dimensions();
     let (wm_w, wm_h) = image.dimensions();
 
