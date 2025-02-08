@@ -235,8 +235,8 @@ fn resize_and_sharpen(
 
     let cropped = img.crop_imm(0, 0, crop_width as u32, crop_height as u32);
     let resized = cropped.resize_exact(width, height, FilterType::Lanczos3);
-    // TODO: Sharpen here
-    Ok(resized)
+    let sharpened = resized.unsharpen(1.2, 3);
+    Ok(sharpened)
 }
 
 fn compute_image_brightness(img: &DynamicImage) -> u32 {
