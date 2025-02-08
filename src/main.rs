@@ -5,7 +5,6 @@ use imageproc::drawing::draw_text_mut;
 use reqwest::blocking::get;
 use reqwest::Url;
 use serde::Deserialize;
-use std::cmp::max;
 use std::cmp::min;
 use std::env;
 use std::fs;
@@ -243,8 +242,7 @@ fn resize_and_sharpen(
 fn compute_image_brightness(img: &DynamicImage) -> u32 {
     let grayscale = img.to_luma8();
     let total_brightness: u32 = grayscale.pixels().map(|p| p.0[0] as u32).sum();
-    let avg_brightness = total_brightness / (grayscale.width() * grayscale.height());
-    avg_brightness
+    total_brightness / (grayscale.width() * grayscale.height())
 }
 
 fn exponential_shrink(value: i64, factor: f64) -> i64 {
