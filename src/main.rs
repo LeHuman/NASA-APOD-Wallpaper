@@ -358,12 +358,17 @@ fn adjust_exposure(img: &DynamicImage, exposure: f32) -> DynamicImage {
     new_img
 }
 
-fn match_exposure(source_img: &DynamicImage, target_img: &DynamicImage) -> DynamicImage {
+fn match_exposure(
+    source_img: &DynamicImage,
+    target_img: &DynamicImage,
+    min_exposure: f32,
+    max_exposure: f32,
+) -> DynamicImage {
     let source_luminance = compute_average_luminance(source_img);
     let target_luminance = compute_average_luminance(target_img);
-    let exposure_adjustment = (target_luminance / source_luminance).log2();
 
-    println!("Adjusting exposure by {:.2} stops", exposure_adjustment);
+    let mut exposure_adjustment = (target_luminance / source_luminance).log2();
+    exposure_adjustment = exposure_adjustment.clamp(min_exposure, max_exposure);
 
     adjust_exposure(source_img, exposure_adjustment)
 }
@@ -385,7 +390,7 @@ fn add_watermark(
         min(image.width(), img.width()),
         min(image.height(), img.height()),
     );
-    let image = match_exposure(&image, &img_sample);
+    let image = match_exposure(&image, &img_sample, -5.0, 5.0);
     let (w, h) = img.dimensions();
     let (wm_w, wm_h) = image.dimensions();
 
