@@ -1,5 +1,7 @@
 use ab_glyph::{FontRef, PxScale};
 use directories::UserDirs;
+use image::GenericImage;
+use image::Rgba;
 use image::{imageops::FilterType, DynamicImage, GenericImageView};
 use imageproc::drawing::draw_text_mut;
 use reqwest::blocking::get;
@@ -245,15 +247,23 @@ fn compute_image_brightness(img: &DynamicImage) -> u32 {
     total_brightness / (grayscale.width() * grayscale.height())
 }
 
-fn exponential_shrink(value: i64, factor: f64) -> i64 {
-    if value == 0 {
-        return 0;
+fn compute_average_luminance(img: &DynamicImage) -> f32 {
+    let (width, height) = img.dimensions();
+    let mut total_luminance = 0.0;
+    let pixel_count = (width * height) as f32;
+
+    for (_, _, pixel) in img.pixels() {
+        let rgba = pixel.0;
+        let r = rgba[0] as f32 / 255.0;
+        let g = rgba[1] as f32 / 255.0;
+        let b = rgba[2] as f32 / 255.0;
+
+        // Approximate luminance (perceived brightness)
+        let luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+        total_luminance += luminance;
     }
 
-    let sign = value.signum();
-    let magnitude = (value.abs() as f64).ln() / factor;
-
-    (sign as f64 * magnitude.exp()).round() as i64
+    total_luminance / pixel_count
 }
 
 fn add_text_overlay(
@@ -328,6 +338,36 @@ fn add_text_overlay(
     Ok(img)
 }
 
+fn adjust_exposure(img: &DynamicImage, exposure: f32) -> DynamicImage {
+    let mut new_img = img.clone();
+    let factor = 2.0f32.powf(exposure); // Exposure factor
+
+    for (x, y, pixel) in img.pixels() {
+        let mut rgba = pixel.0;
+
+        for i in 0..3 {
+            // Ignore alpha channel
+            let linear = (rgba[i] as f32 / 255.0).powf(2.2); // Convert to linear space
+            let adjusted = (linear * factor).clamp(0.0, 1.0); // Adjust exposure
+            rgba[i] = (adjusted.powf(1.0 / 2.2) * 255.0) as u8; // Convert back to sRGB
+        }
+
+        new_img.put_pixel(x, y, Rgba(rgba));
+    }
+
+    new_img
+}
+
+fn match_exposure(source_img: &DynamicImage, target_img: &DynamicImage) -> DynamicImage {
+    let source_luminance = compute_average_luminance(source_img);
+    let target_luminance = compute_average_luminance(target_img);
+    let exposure_adjustment = (target_luminance / source_luminance).log2();
+
+    println!("Adjusting exposure by {:.2} stops", exposure_adjustment);
+
+    adjust_exposure(source_img, exposure_adjustment)
+}
+
 fn add_watermark(
     mut img: DynamicImage,
     mw: u32,
@@ -345,10 +385,7 @@ fn add_watermark(
         min(image.width(), img.width()),
         min(image.height(), img.height()),
     );
-    let image_b = compute_image_brightness(&image);
-    let img_b = compute_image_brightness(&img_sample);
-    let dv_b = exponential_shrink((img_b as i64) - (image_b as i64), 1.35);
-    let image = image.brighten(dv_b as i32);
+    let image = match_exposure(&image, &img_sample);
     let (w, h) = img.dimensions();
     let (wm_w, wm_h) = image.dimensions();
 
