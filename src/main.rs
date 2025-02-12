@@ -97,7 +97,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         input
     )) {
         Ok(apod) => {
-            if let Err(e) = process_image(&save_directory, &apod) {
+            let filepath = download_image(
+                &apod.hd_url.clone().unwrap_or(apod.url.clone()),
+                &save_directory,
+            )?;
+            if let Err(e) =
+                process_image(&save_directory, &filepath, &apod.title, &apod.explanation)
+            {
                 eprintln!("Error processing image: {}", e);
             }
         }
@@ -108,40 +114,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 fn test_local_apod() -> Result<(), Box<dyn std::error::Error>> {
-    let save_dir = format!("{}/NASA_APOD", env::temp_dir().to_str().unwrap());
-    fs::create_dir_all(&save_dir)?;
-    let mut img = image::open("NASA_APOD/test_apod.jpg")?;
-    let wallpaper = Wallpaper::new()?;
-    let monitors = wallpaper.get_monitors();
+    let save_directory = get_nasa_apod_folder().ok_or("Failed to get APOD pictures folder")?;
 
-    if monitors.is_empty() {
-        return Err("No monitors detected.".into());
-    }
+    let filepath = save_directory.join("SpiderFly_Boddington_4788.jpg");
 
-    let mut already_watermarked = false;
+    let title = "Sick Image".to_string();
+    let explanation =
+        "Yo This is so cool! Yea that didn't count as a sentence. Does it? No, But this does."
+            .to_string();
 
-    for (index, monitor) in monitors.iter().enumerate() {
-        let (width, height) = monitor.size();
-        let resized_img = resize_and_sharpen(&mut img, width, height)?;
-        let scale = ((1920.0 / f64::from(width)) + (1080.0 / f64::from(height))) / 2.0;
-        let annotated_img = add_text_overlay(
-            scale as f32,
-            resized_img,
-            "A very epic title",
-            "This is so epic",
-        )?;
-        let mut final_img = annotated_img;
-        if !already_watermarked {
-            final_img = add_watermark(final_img.clone(), width, height)?;
-        }
-        already_watermarked = true;
-
-        let output_filename = format!("{}/wallpaper_{}.png", save_dir, index);
-        final_img.save_with_format(&output_filename, image::ImageFormat::Png)?;
-        println!("Saved: {}", output_filename);
-
-        wallpaper.set_wallpaper(&output_filename, monitor)?;
-    }
+    process_image(&save_directory, &filepath, &title, &explanation)?;
 
     Ok(())
 }
@@ -157,7 +139,12 @@ fn fetch_apod(apod_url: String) -> Result<ApodResponse, Box<dyn std::error::Erro
     Ok(response)
 }
 
-fn process_image(save_dir: &Path, apod: &ApodResponse) -> Result<(), Box<dyn std::error::Error>> {
+fn process_image(
+    save_dir: &Path,
+    filepath: &PathBuf,
+    title: &String,
+    explanation: &String,
+) -> Result<(), Box<dyn std::error::Error>> {
     let wallpaper = Wallpaper::new().unwrap();
     let monitors = wallpaper.get_monitors();
 
@@ -165,7 +152,6 @@ fn process_image(save_dir: &Path, apod: &ApodResponse) -> Result<(), Box<dyn std
         return Err("No monitors detected.".into());
     }
 
-    let filepath = download_image(&apod.hd_url.clone().unwrap_or(apod.url.clone()), save_dir)?;
     let mut img = image::open(&filepath)?;
 
     let watermarked_monitor = rand::random_range(0..monitors.len());
@@ -174,8 +160,7 @@ fn process_image(save_dir: &Path, apod: &ApodResponse) -> Result<(), Box<dyn std
         let (width, height) = monitor.size();
         let resized_img = resize_and_sharpen(&mut img, width, height)?;
         let scale = ((f64::from(width) / 1920.0) + (f64::from(height) / 1080.0)) / 2.0;
-        let annotated_img =
-            add_text_overlay(scale as f32, resized_img, &apod.title, &apod.explanation)?;
+        let annotated_img = add_text_overlay(scale as f32, resized_img, title, explanation)?;
         let mut final_img = annotated_img;
         if index == watermarked_monitor {
             println!("Watermarked: {}", watermarked_monitor);
@@ -373,6 +358,119 @@ fn match_exposure(
     adjust_exposure(source_img, exposure_adjustment)
 }
 
+/// Convert RGB to HSL (Hue, Saturation, Lightness)
+fn rgb_to_hsl(r: f32, g: f32, b: f32) -> (f32, f32, f32) {
+    let max = r.max(g).max(b);
+    let min = r.min(g).min(b);
+    let lightness = (max + min) / 2.0;
+
+    if max == min {
+        return (0.0, 0.0, lightness); // No saturation, grayscale
+    }
+
+    let delta = max - min;
+    let saturation = if lightness > 0.5 {
+        delta / (2.0 - max - min)
+    } else {
+        delta / (max + min)
+    };
+
+    let hue = if max == r {
+        ((g - b) / delta) % 6.0
+    } else if max == g {
+        ((b - r) / delta) + 2.0
+    } else {
+        ((r - g) / delta) + 4.0
+    };
+
+    (hue * 60.0, saturation, lightness)
+}
+
+/// Convert HSL back to RGB
+fn hsl_to_rgb(hue: f32, saturation: f32, lightness: f32) -> (f32, f32, f32) {
+    let c = (1.0 - (2.0 * lightness - 1.0).abs()) * saturation;
+    let x = c * (1.0 - ((hue / 60.0) % 2.0 - 1.0).abs());
+    let m = lightness - c / 2.0;
+
+    let (r, g, b) = if (0.0..60.0).contains(&hue) {
+        (c, x, 0.0)
+    } else if (60.0..120.0).contains(&hue) {
+        (x, c, 0.0)
+    } else if (120.0..180.0).contains(&hue) {
+        (0.0, c, x)
+    } else if (180.0..240.0).contains(&hue) {
+        (0.0, x, c)
+    } else if (240.0..300.0).contains(&hue) {
+        (x, 0.0, c)
+    } else {
+        (c, 0.0, x)
+    };
+
+    (r + m, g + m, b + m)
+}
+
+/// Compute average hue and saturation of an image
+fn compute_avg_hue_saturation(img: &DynamicImage) -> (f32, f32) {
+    let mut total_hue = 0.0;
+    let mut total_saturation = 0.0;
+    let mut count = 0.0;
+
+    for (_, _, pixel) in img.pixels() {
+        let rgba = pixel.0;
+        let r = rgba[0] as f32 / 255.0;
+        let g = rgba[1] as f32 / 255.0;
+        let b = rgba[2] as f32 / 255.0;
+
+        let (hue, saturation, _) = rgb_to_hsl(r, g, b);
+        total_hue += hue;
+        total_saturation += saturation;
+        count += 1.0;
+    }
+
+    (total_hue / count, total_saturation / count)
+}
+
+/// Match the hue and saturation of `source_img` to `target_img` by a factor
+fn match_hue_saturation(
+    source_img: &DynamicImage,
+    target_img: &DynamicImage,
+    hue_factor: f32,
+    saturation_factor: f32,
+) -> DynamicImage {
+    let mut new_img = source_img.clone();
+
+    let (source_hue, source_sat) = compute_avg_hue_saturation(source_img);
+    let (target_hue, target_sat) = compute_avg_hue_saturation(target_img);
+
+    let hue_shift = (target_hue - source_hue) * hue_factor;
+    let saturation_scale = 1.0 + (target_sat - source_sat) * saturation_factor;
+
+    for (x, y, pixel) in source_img.pixels() {
+        let mut rgba = pixel.0;
+        let r = rgba[0] as f32 / 255.0;
+        let g = rgba[1] as f32 / 255.0;
+        let b = rgba[2] as f32 / 255.0;
+
+        let (mut hue, mut saturation, lightness) = rgb_to_hsl(r, g, b);
+
+        hue = (hue + hue_shift) % 360.0; // Apply hue shift
+        if hue < 0.0 {
+            hue += 360.0;
+        } // Keep hue in valid range
+
+        saturation = (saturation * saturation_scale).clamp(0.0, 1.0); // Scale saturation
+
+        let (r, g, b) = hsl_to_rgb(hue, saturation, lightness);
+        rgba[0] = (r * 255.0) as u8;
+        rgba[1] = (g * 255.0) as u8;
+        rgba[2] = (b * 255.0) as u8;
+
+        new_img.put_pixel(x, y, Rgba(rgba));
+    }
+
+    new_img
+}
+
 fn add_watermark(
     mut img: DynamicImage,
     mw: u32,
@@ -391,6 +489,8 @@ fn add_watermark(
         min(image.height(), img.height()),
     );
     let image = match_exposure(&image, &img_sample, -5.0, 5.0);
+    let image = match_hue_saturation(&image, &img_sample, 0.05, 0.1);
+    let image = adjust_exposure(&image, 0.2);
     let (w, h) = img.dimensions();
     let (wm_w, wm_h) = image.dimensions();
 
